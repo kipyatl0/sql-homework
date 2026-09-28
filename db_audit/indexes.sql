@@ -1,0 +1,184 @@
+-- частичный индекс в orders на user_id и created_at, status = 'completed'
+CREATE INDEX idx_orders_user_id_created_at_status_completed ON orders (user_id, created_at) WHERE status = 'completed';
+DROP INDEX idx_orders_user_id_created_at_status_completed;
+-- план первого запроса после создания индекса
+-- Bitmap Heap Scan on orders o  (cost=12.13..1302.92 rows=361 width=40) (actual time=0.267..2.093 rows=260.00 loops=1)
+--   Recheck Cond: ((user_id = 5) AND (created_at >= (now() - '1 mon'::interval)) AND ((status)::text = 'completed'::text))
+--   Heap Blocks: exact=242
+--   Buffers: shared hit=82 read=167
+--   I/O Timings: shared read=0.338
+--   ->  Bitmap Index Scan on idx_orders_user_id_created_at_status_completed  (cost=0.00..12.04 rows=361 width=0) (actual time=0.129..0.129 rows=260.00 loops=1)
+--         Index Cond: ((user_id = 5) AND (created_at >= (now() - '1 mon'::interval)))
+--         Index Searches: 1
+--         Buffers: shared hit=3 read=4
+--         I/O Timings: shared read=0.026
+-- Planning:
+--   Buffers: shared hit=21 read=1
+--   I/O Timings: shared read=0.026
+-- Planning Time: 0.454 ms
+-- Execution Time: 2.162 ms
+
+-- включающий индекс в orders на created_at и id, status = 'completed'  
+CREATE INDEX idx_orders_created_at_id_status_completed ON orders (created_at) INCLUDE (id) WHERE status = 'completed';
+DROP INDEX idx_orders_created_at_id_status_completed;
+-- Limit  (cost=127853.01..127853.03 rows=10 width=12) (actual time=604.576..672.190 rows=10.00 loops=1)
+--   Buffers: shared hit=3214 read=43245, temp read=28442 written=28480
+--   I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--   ->  Sort  (cost=127853.01..127858.00 rows=1999 width=12) (actual time=599.360..666.973 rows=10.00 loops=1)
+--         Sort Key: (sum(oi.quantity)) DESC
+--         Sort Method: top-N heapsort  Memory: 25kB
+--         Buffers: shared hit=3214 read=43245, temp read=28442 written=28480
+--         I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--         ->  Finalize GroupAggregate  (cost=127207.02..127809.81 rows=1999 width=12) (actual time=598.482..666.866 rows=2000.00 loops=1)
+--               Group Key: oi.product_id
+--               Buffers: shared hit=3214 read=43245, temp read=28442 written=28480
+--               I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--               ->  Gather Merge  (cost=127207.02..127765.83 rows=4798 width=12) (actual time=598.466..666.514 rows=6000.00 loops=1)
+--                     Workers Planned: 2
+--                     Workers Launched: 2
+--                     Buffers: shared hit=3214 read=43245, temp read=28442 written=28480
+--                     I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--                     ->  Sort  (cost=126207.00..126212.00 rows=1999 width=12) (actual time=579.942..580.046 rows=2000.00 loops=3)
+--                           Sort Key: oi.product_id
+--                           Sort Method: quicksort  Memory: 111kB
+--                           Buffers: shared hit=3214 read=43245, temp read=28442 written=28480
+--                           I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--                           Worker 0:  Sort Method: quicksort  Memory: 111kB
+--                           Worker 1:  Sort Method: quicksort  Memory: 111kB
+--                           ->  Partial HashAggregate  (cost=126077.41..126097.40 rows=1999 width=12) (actual time=579.413..579.569 rows=2000.00 loops=3)
+--                                 Group Key: oi.product_id
+--                                 Batches: 1  Memory Usage: 217kB
+--                                 Buffers: shared hit=3200 read=43245, temp read=28442 written=28480
+--                                 I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--                                 Worker 0:  Batches: 1  Memory Usage: 217kB
+--                                 Worker 1:  Batches: 1  Memory Usage: 217kB
+--                                 ->  Parallel Hash Join  (cost=11670.27..122337.01 rows=748081 width=8) (actual time=432.201..536.631 rows=571416.33 loops=3)
+--                                       Hash Cond: (oi.order_id = o.id)
+--                                       Buffers: shared hit=3200 read=43245, temp read=28442 written=28480
+--                                       I/O Timings: shared read=76.978, temp read=34.525 write=348.053
+--                                       ->  Parallel Seq Scan on order_items oi  (cost=0.00..73710.88 rows=2914988 width=12) (actual time=0.362..118.162 rows=2331990.33 loops=3)
+--                                             Buffers: shared hit=1316 read=43245
+--                                             I/O Timings: shared read=76.978
+--                                       ->  Parallel Hash  (cost=8161.02..8161.02 rows=213860 width=4) (actual time=29.466..29.467 rows=163320.67 loops=3)
+--                                             Buckets: 262144  Batches: 4  Memory Usage: 6912kB
+--                                             Buffers: shared hit=1884, temp written=1100
+--                                             I/O Timings: temp write=9.480
+--                                             ->  Parallel Index Only Scan using idx_orders_created_at_id_status_completed on orders o  (cost=0.43..8161.02 rows=213860 width=4) (actual time=3.814..13.178 rows=163320.67 loops=3)
+--                                                   Index Cond: (created_at >= (now() - '3 mons'::interval))
+--                                                   Heap Fetches: 0
+--                                                   Index Searches: 1
+--                                                   Buffers: shared hit=1884
+-- Planning:
+--   Buffers: shared hit=16
+-- Planning Time: 0.349 ms
+-- JIT:
+--   Functions: 55
+--   Options: Inlining false, Optimization false, Expressions true, Deforming true
+--   Timing: Generation 2.160 ms (Deform 0.448 ms), Inlining 0.000 ms, Optimization 0.683 ms, Emission 16.019 ms, Total 18.862 ms
+-- Execution Time: 673.066 ms
+
+-- Почти нулевая разница, на данном прогоне вообще отрицательная, но это максимум, который можно выжать с помощью индексов. 
+-- Клод сказал, что можно добиться ещё большего ускорения с помощью материализации, 
+-- но я не особо familiar с этой темой и задание было про индексы, поэтому как-то так. 
+
+
+-- индекс на created_at, включая total_amount, status <> 'cancelled'
+CREATE INDEX idx_orders_created_at_total_amount_status_not_cancelled ON orders (created_at) INCLUDE (total_amount) WHERE status <> 'cancelled';
+DROP INDEX idx_orders_created_at_total_amount_status_not_cancelled;
+-- HashAggregate  (cost=11219.51..15846.77 rows=186842 width=36) (actual time=38.565..38.600 rows=31.00 loops=1)
+--   Group Key: (created_at)::date
+--   Planned Partitions: 8  Batches: 1  Memory Usage: 553kB
+--   Buffers: shared hit=1 read=741
+--   I/O Timings: shared read=6.205
+--   ->  Index Only Scan using idx_orders_created_at_total_amount_status_not_cancelled on orders o  (cost=0.43..4541.37 rows=186842 width=11) (actual time=0.061..20.743 rows=189714.00 loops=1)
+--         Index Cond: (created_at >= (now() - '30 days'::interval))
+--         Heap Fetches: 0
+--         Index Searches: 1
+--         Buffers: shared hit=1 read=741
+--         I/O Timings: shared read=6.205
+-- Planning:
+--   Buffers: shared hit=21 read=1
+--   I/O Timings: shared read=0.034
+-- Planning Time: 0.334 ms
+-- Execution Time: 38.994 ms
+
+CREATE INDEX idx_orders_total_amount ON orders (total_amount) INCLUDE (id);
+DROP INDEX idx_orders_total_amount;
+-- Gather  (cost=22234.06..146014.09 rows=424173 width=62) (actual time=59.048..299.466 rows=587758.00 loops=1)
+--   Workers Planned: 2
+--   Workers Launched: 2
+--   Buffers: shared hit=7 read=63509 written=6
+--   I/O Timings: shared read=41.240 write=0.194
+--   ->  Parallel Hash Join  (cost=21234.06..102596.79 rows=176739 width=62) (actual time=44.513..260.922 rows=195919.33 loops=3)
+--         Hash Cond: (oi.order_id = o.id)
+--         Buffers: shared hit=7 read=63509 written=6
+--         I/O Timings: shared read=41.240 write=0.194
+--         ->  Parallel Seq Scan on order_items oi  (cost=0.00..73710.88 rows=2914988 width=22) (actual time=0.100..82.198 rows=2331990.33 loops=3)
+--               Buffers: shared read=44561
+--               I/O Timings: shared read=1.615
+--         ->  Parallel Hash  (cost=20602.48..20602.48 rows=50526 width=40) (actual time=43.627..43.628 rows=39648.33 loops=3)
+--               Buckets: 131072  Batches: 1  Memory Usage: 10400kB
+--               Buffers: shared hit=7 read=18948 written=6
+--               I/O Timings: shared read=39.625 write=0.194
+--               ->  Parallel Bitmap Heap Scan on orders o  (cost=1453.91..20602.48 rows=50526 width=40) (actual time=4.127..26.410 rows=39648.33 loops=3)
+--                     Recheck Cond: (total_amount > '10000'::numeric)
+--                     Heap Blocks: exact=8553
+--                     Buffers: shared hit=7 read=18948 written=6
+--                     I/O Timings: shared read=39.625 write=0.194
+--                     Worker 0:  Heap Blocks: exact=4967
+--                     Worker 1:  Heap Blocks: exact=4977
+--                     ->  Bitmap Index Scan on idx_orders_total_amount  (cost=0.00..1423.59 rows=121262 width=0) (actual time=10.418..10.419 rows=118945.00 loops=1)
+--                           Index Cond: (total_amount > '10000'::numeric)
+--                           Index Searches: 1
+--                           Buffers: shared read=458
+--                           I/O Timings: shared read=4.300
+-- Planning:
+--   Buffers: shared hit=8
+-- Planning Time: 0.345 ms
+-- JIT:
+--   Functions: 36
+--   Options: Inlining false, Optimization false, Expressions true, Deforming true
+--   Timing: Generation 2.315 ms (Deform 1.077 ms), Inlining 0.000 ms, Optimization 1.138 ms, Emission 19.590 ms, Total 23.043 ms
+-- Execution Time: 313.553 ms
+
+-- добавляем ещё один индекс для последнего запроса, храним все колонки order_items в b-tree, словно это MySQL
+CREATE INDEX idx_order_items_order_id_include_all ON order_items (order_id) INCLUDE (id, product_id, quantity, price);
+DROP INDEX idx_order_items_order_id_include_all;
+-- Gather  (cost=2454.34..110077.08 rows=424173 width=62) (actual time=16.562..179.743 rows=587758.00 loops=1)
+--   Workers Planned: 2
+--   Workers Launched: 2
+--   Buffers: shared hit=328302 read=49946
+--   I/O Timings: shared read=115.583
+--   ->  Nested Loop  (cost=1454.34..66659.78 rows=176739 width=62) (actual time=8.656..140.705 rows=195919.33 loops=3)
+--         Buffers: shared hit=328302 read=49946
+--         I/O Timings: shared read=115.583
+--         ->  Parallel Bitmap Heap Scan on orders o  (cost=1453.91..20602.48 rows=50526 width=40) (actual time=3.800..31.377 rows=39648.33 loops=3)
+--               Recheck Cond: (total_amount > '10000'::numeric)
+--               Heap Blocks: exact=6592
+--               Buffers: shared hit=143 read=18852
+--               I/O Timings: shared read=2.766
+--               Worker 0:  Heap Blocks: exact=5972
+--               Worker 1:  Heap Blocks: exact=5933
+--               ->  Bitmap Index Scan on idx_orders_total_amount  (cost=0.00..1423.59 rows=121262 width=0) (actual time=8.982..8.983 rows=118945.00 loops=1)
+--                     Index Cond: (total_amount > '10000'::numeric)
+--                     Index Searches: 1
+--                     Buffers: shared hit=76 read=382
+--                     I/O Timings: shared read=1.440
+--         ->  Index Only Scan using idx_order_items_order_id_include_all on order_items oi  (cost=0.43..0.85 rows=6 width=22) (actual time=0.002..0.002 rows=4.94 loops=118945)
+--               Index Cond: (order_id = o.id)
+--               Heap Fetches: 0
+--               Index Searches: 118945
+--               Buffers: shared hit=328159 read=31094
+--               I/O Timings: shared read=112.817
+-- Planning:
+--   Buffers: shared hit=16
+-- Planning Time: 0.323 ms
+-- JIT:
+--   Functions: 18
+--   Options: Inlining false, Optimization false, Expressions true, Deforming true
+--   Timing: Generation 1.506 ms (Deform 0.447 ms), Inlining 0.000 ms, Optimization 0.803 ms, Emission 13.514 ms, Total 15.823 ms
+-- Execution Time: 194.050 ms
+SET random_page_cost = 4;
+RESET random_page_cost;
+-- Nested Loop работает быстрее Hash Join, учитывая, что у меня SSD и я понизил random_page_cost до 1.1. 
+-- На HDD этот индекс не будет использоваться. А на SSD Index Only Scan, повторённый 118945 раз, будет работать быстрее, чем Hash Join.

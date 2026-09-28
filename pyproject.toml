@@ -1,0 +1,9 @@
+[project]
+name = "db-audit"
+version = "0.1.0"
+description = "PostgreSQL performance audit playground: EXPLAIN ANALYZE, indexes, N+1"
+requires-python = ">=3.14"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "sqlalchemy>=2.0",
+]

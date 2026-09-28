@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: sql-homework-postgres
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: shop
+    command:
+      - postgres
+      # pg_stat_statements: top of the slowest/most frequent queries (the first step of any audit).
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      # I/O timings in EXPLAIN (ANALYZE, BUFFERS) and pg_stat_statements.
+      - -c
+      - track_io_timing=on
+      # SSD: a random page read costs almost as little as a sequential one (the default 4 assumes HDD).
+      - -c
+      - random_page_cost=1.1
+    ports:
+      # 5433, not 5432: the Postgres from the redis homework can run at the same time.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      # Postgres 18+ images keep data under /var/lib/postgresql/<major>/.
+      - postgres-data:/var/lib/postgresql
+      # Runs once, on the first start with an empty volume: extensions, then db_audit/schema.sql.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      # SQL files are available inside the container: psql -f /db_audit/queries.sql
+      - ./db_audit:/db_audit:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
